@@ -67,3 +67,15 @@ helm install craftypath/sops-operator
 ```
 
 Check out the chart's documentation for configuration options.
+
+## Local Dev
+
+It's possible to run the operator locally to test changes against a Kubernetes cluster.
+
+1. Switch to the `lich-lab` k8s cluster context.
+2. Ensure that any existing `sops-operator` deployed in the cluster is set to watch a different namespace than the one you'll be using for local dev. This can be accomplished in argo by overriding the `watchNamespace` parameter.
+3. Grab the lab AWS credentials from the SSO start page and dump them in your terminal.
+4. Run `WATCH_NAMESPACE=test go run main.go`.
+5. Apply a test SopsSecret to the cluster. Note the test manifest has to be created in the same namespace that the operator is watching and use a KMS key that your AWS credentials have access to.
+
+Afterwards make sure to clean up your test namespace and remove the `watchNamespace` override in Argo.
