@@ -42,7 +42,7 @@ import (
 
 type FakeDecryptor struct{}
 
-func (f *FakeDecryptor) Decrypt(fileName string, encrypted string) ([]byte, error) {
+func (f *FakeDecryptor) Decrypt(_ string, _ string) ([]byte, error) {
 	return []byte("unencrypted"), nil
 }
 

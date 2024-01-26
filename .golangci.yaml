@@ -9,7 +9,7 @@ linter-settings:
 linters:
   disable-all: true
   enable:
-    - deadcode
+    # - deadcode
     - errcheck
     - gofmt
     - goimports
@@ -19,7 +19,7 @@ linters:
     - misspell
     - revive
     - staticcheck
-    - structcheck
+    # - structcheck
     - typecheck
     - unused
-    - varcheck
+    # - varcheck

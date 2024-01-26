@@ -23,6 +23,7 @@ import (
 	"time"
 	"unicode"
 
+	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -93,14 +94,28 @@ func (r *SopsSecretReconciler) update(ctx context.Context, secret *corev1.Secret
 	logger := log.FromContext(ctx)
 	logger.Info("handling Secret update")
 
-	data := make(map[string][]byte, len(sopsSecret.Spec.StringData))
+	data := map[string][]byte{}
 	for fileName, encryptedContents := range sopsSecret.Spec.StringData {
 		logger.Info("decrypting data", "fileName", fileName)
 		decrypted, err := r.Decryptor.Decrypt(fileName, encryptedContents)
 		if err != nil {
 			return err
 		}
-		data[fileName] = decrypted
+		// Special case for env YAML files; explode them into individual keys
+		if fileName == "env.yaml" || fileName == "env.yml" {
+			obj := make(map[string]interface{})
+			err := yaml.Unmarshal(decrypted, obj)
+			if err != nil {
+				data[fileName] = decrypted
+				continue
+			}
+			for k, v := range obj {
+				data[k] = []byte(fmt.Sprintf("%v", v))
+			}
+			// Treat everything else like usual and don't try to parse it
+		} else {
+			data[fileName] = decrypted
+		}
 	}
 
 	secret.Annotations = sopsSecret.Spec.Metadata.Annotations
