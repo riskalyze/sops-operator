@@ -176,6 +176,11 @@ func TestReconcile_Update(t *testing.T) {
 	assert.Equal(t, event, "Normal Updated Updated secret: test-secret")
 }
 
+func TestReconcile_right(t *testing.T) {
+	assert.Equal(t, right("test.env.yaml", 9), ".env.yaml")
+	assert.Equal(t, right("test.env.yml", 8), ".env.yml")
+}
+
 func TestExistingSecretNotOwnedByUs(t *testing.T) {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

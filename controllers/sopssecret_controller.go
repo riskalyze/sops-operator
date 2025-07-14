@@ -90,6 +90,18 @@ func (r *SopsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	return r.manageSuccess(ctx, instance, result)
 }
 
+func right(str string, num int) string {
+	if num <= 0 {
+		return ""
+	}
+	max := len(str)
+	if num > max {
+		num = max
+	}
+	num = max - num
+	return str[num:]
+}
+
 func (r *SopsSecretReconciler) update(ctx context.Context, secret *corev1.Secret, sopsSecret *craftypathgithubiov1alpha1.SopsSecret) error {
 	logger := log.FromContext(ctx)
 	logger.Info("handling Secret update")
@@ -102,7 +114,7 @@ func (r *SopsSecretReconciler) update(ctx context.Context, secret *corev1.Secret
 			return err
 		}
 		// Special case for env YAML files; explode them into individual keys
-		if fileName == "env.yaml" || fileName == "env.yml" {
+		if fileName == "env.yaml" || fileName == "env.yml" || right(fileName, 9) == ".env.yaml" || right(fileName, 8) == ".env.yml" {
 			obj := make(map[string]interface{})
 			err := yaml.Unmarshal(decrypted, obj)
 			if err != nil {
