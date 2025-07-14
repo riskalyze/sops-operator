@@ -46,6 +46,12 @@ func (f *FakeDecryptor) Decrypt(_ string, _ string) ([]byte, error) {
 	return []byte("unencrypted"), nil
 }
 
+type FakeDecryptorYaml struct{}
+
+func (f *FakeDecryptorYaml) Decrypt(_ string, _ string) ([]byte, error) {
+	return []byte("test-key: test-value\ntest-key-2: test-value-2"), nil
+}
+
 func TestMain(m *testing.M) {
 	logf.SetLogger(
 		zap.New(zap.UseDevMode(true),
@@ -181,6 +187,41 @@ func TestReconcile_right(t *testing.T) {
 	assert.Equal(t, right("test.env.yml", 8), ".env.yml")
 }
 
+func TestReconcile_Update_MapValues(t *testing.T) {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              name,
+			Namespace:         namespace,
+			CreationTimestamp: metav1.Now(),
+		},
+	}
+
+	sopsSecret := &v1alpha1.SopsSecret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              name,
+			Namespace:         namespace,
+			CreationTimestamp: metav1.Now(),
+		},
+		Spec: v1alpha1.SopsSecretSpec{
+			StringData: map[string]string{
+				"test.env.yaml": "encrypted",
+			},
+		},
+	}
+
+	s := runtime.NewScheme()
+	utilruntime.Must(scheme.AddToScheme(s))
+	utilruntime.Must(v1alpha1.AddToScheme(s))
+
+	recorder := record.NewFakeRecorder(2)
+	r := newSopsSecretReconcilerYaml(s, recorder, sopsSecret)
+
+	_ = r.update(context.Background(), secret, sopsSecret)
+
+	assert.Equal(t, secret.Data["test-key"], []byte("test-value"))
+	assert.Equal(t, secret.Data["test-key-2"], []byte("test-value-2"))
+}
+
 func TestExistingSecretNotOwnedByUs(t *testing.T) {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -225,5 +266,15 @@ func newSopsSecretReconciler(s *runtime.Scheme, recorder *record.FakeRecorder, o
 		Scheme:    s,
 		Recorder:  recorder,
 		Decryptor: &FakeDecryptor{},
+	}
+}
+
+func newSopsSecretReconcilerYaml(s *runtime.Scheme, recorder *record.FakeRecorder, objs ...runtime.Object) *SopsSecretReconciler {
+	cl := fake.NewClientBuilder().WithScheme(s).WithRuntimeObjects(objs...).Build()
+	return &SopsSecretReconciler{
+		Client:    cl,
+		Scheme:    s,
+		Recorder:  recorder,
+		Decryptor: &FakeDecryptorYaml{},
 	}
 }
