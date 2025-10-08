@@ -1,0 +1,8 @@
+############################################################
+# Repository Owner: @riskalyze/solo
+############################################################
+
+* @riskalyze/solo
+infra/ @riskalyze/solo
+.github/ @riskalyze/solo
+.github/CODEOWNERS @riskalyze/codeowners
