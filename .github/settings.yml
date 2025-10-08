@@ -1,0 +1,9 @@
+_extends: probot-settings
+
+repository:
+  name: sops-operator
+  description: A Kubernetes operator for [Mozilla SOPS](https://github.com/mozilla/sops).
+
+teams:
+  - name: solo
+    permission: push
