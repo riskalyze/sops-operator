@@ -125,10 +125,10 @@ func Test() error {
 }
 
 func Build() error {
-	return sh.RunV("goreleaser", "release", "--rm-dist", "--snapshot")
+	return sh.RunV("goreleaser", "release", "--clean", "--snapshot")
 }
 
 func Release() error {
 	mg.Deps(Test)
-	return sh.RunV("goreleaser", "release", "--rm-dist")
+	return sh.RunV("goreleaser", "release", "--clean")
 }

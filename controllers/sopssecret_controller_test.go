@@ -117,7 +117,7 @@ func TestReconcile_Create(t *testing.T) {
 
 			res, err := r.Reconcile(context.Background(), req)
 			require.NoError(t, err)
-			assert.False(t, res.Requeue)
+			assert.Zero(t, res.RequeueAfter)
 
 			secret := &corev1.Secret{}
 			err = r.Get(context.Background(), req.NamespacedName, secret)
@@ -148,7 +148,7 @@ func TestReconcile_Update(t *testing.T) {
 
 	res, err := r.Reconcile(context.Background(), req)
 	require.NoError(t, err)
-	assert.False(t, res.Requeue)
+	assert.Zero(t, res.RequeueAfter)
 	event := <-recorder.Events
 	assert.Equal(t, event, "Normal Created Created secret: test-secret")
 
@@ -173,7 +173,7 @@ func TestReconcile_Update(t *testing.T) {
 
 	res, err = r.Reconcile(context.Background(), req)
 	require.NoError(t, err)
-	assert.False(t, res.Requeue)
+	assert.Zero(t, res.RequeueAfter)
 	err = r.Get(context.Background(), req.NamespacedName, secret)
 	require.NoError(t, err)
 	assert.Equal(t, sopsSecret.Spec.Metadata.Labels, secret.Labels)
@@ -260,7 +260,11 @@ func TestExistingSecretNotOwnedByUs(t *testing.T) {
 }
 
 func newSopsSecretReconciler(s *runtime.Scheme, recorder *record.FakeRecorder, objs ...runtime.Object) *SopsSecretReconciler {
-	cl := fake.NewClientBuilder().WithScheme(s).WithRuntimeObjects(objs...).Build()
+	cl := fake.NewClientBuilder().
+		WithScheme(s).
+		WithStatusSubresource(&v1alpha1.SopsSecret{}).
+		WithRuntimeObjects(objs...).
+		Build()
 	return &SopsSecretReconciler{
 		Client:    cl,
 		Scheme:    s,
@@ -270,7 +274,11 @@ func newSopsSecretReconciler(s *runtime.Scheme, recorder *record.FakeRecorder, o
 }
 
 func newSopsSecretReconcilerYaml(s *runtime.Scheme, recorder *record.FakeRecorder, objs ...runtime.Object) *SopsSecretReconciler {
-	cl := fake.NewClientBuilder().WithScheme(s).WithRuntimeObjects(objs...).Build()
+	cl := fake.NewClientBuilder().
+		WithScheme(s).
+		WithStatusSubresource(&v1alpha1.SopsSecret{}).
+		WithRuntimeObjects(objs...).
+		Build()
 	return &SopsSecretReconciler{
 		Client:    cl,
 		Scheme:    s,

@@ -14,8 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v1.55.2
-go install github.com/goreleaser/goreleaser
+curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.12.2
+go install github.com/goreleaser/goreleaser/v2@v2.17.1
 go install github.com/magefile/mage
 go install golang.org/x/tools/cmd/goimports
 go install sigs.k8s.io/controller-tools/cmd/controller-gen

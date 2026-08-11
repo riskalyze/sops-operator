@@ -14,8 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package version holds build information injected at link time.
 package version
 
+// Build information, set via ldflags at release time.
 var (
 	Version   = "dev"
 	GitCommit = "HEAD"
