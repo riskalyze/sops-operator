@@ -20,7 +20,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -105,12 +107,17 @@ func main() {
 	// Restrict the cache to the namespaces set in WATCH_NAMESPACE (e.g. ns1,ns2).
 	// An empty value means cluster scope.
 	if watchNamespace != "" {
-		namespaces := strings.Split(watchNamespace, ",")
-		setupLog.Info("manager set up with namespaces", "namespaces", namespaces)
-		defaultNamespaces := make(map[string]cache.Config, len(namespaces))
-		for _, namespace := range namespaces {
-			defaultNamespaces[strings.TrimSpace(namespace)] = cache.Config{}
+		defaultNamespaces := map[string]cache.Config{}
+		for _, namespace := range strings.Split(watchNamespace, ",") {
+			namespace = strings.TrimSpace(namespace)
+			// An empty entry means all namespaces, which would silently widen the scope.
+			if namespace == "" {
+				setupLog.Error(nil, "empty namespace in "+watchNamespaceEnvVar, watchNamespaceEnvVar, watchNamespace)
+				os.Exit(1)
+			}
+			defaultNamespaces[namespace] = cache.Config{}
 		}
+		setupLog.Info("manager set up with namespaces", "namespaces", slices.Sorted(maps.Keys(defaultNamespaces)))
 		options.Cache = cache.Options{DefaultNamespaces: defaultNamespaces}
 	}
 
