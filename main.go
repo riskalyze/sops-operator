@@ -14,12 +14,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package main runs the SOPS operator manager.
 package main
 
 import (
 	"flag"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -38,6 +41,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/riskalyze/sops-operator/api/v1alpha1"
 	"github.com/riskalyze/sops-operator/controllers"
@@ -93,21 +97,28 @@ func main() {
 	}
 
 	options := ctrl.Options{
-		Namespace:              watchNamespace,
 		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
+		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "sops-operator-lock",
 	}
 
-	// Add support for MultiNamespace set in WATCH_NAMESPACE (e.g ns1,ns2)
-	if strings.Contains(watchNamespace, ",") {
-		setupLog.Info("manager set up with multiple namespaces", "namespaces", watchNamespace)
-		// configure cluster-scoped with MultiNamespacedCacheBuilder
-		options.Namespace = ""
-		options.NewCache = cache.MultiNamespacedCacheBuilder(strings.Split(watchNamespace, ","))
+	// Restrict the cache to the namespaces set in WATCH_NAMESPACE (e.g. ns1,ns2).
+	// An empty value means cluster scope.
+	if watchNamespace != "" {
+		defaultNamespaces := map[string]cache.Config{}
+		for _, namespace := range strings.Split(watchNamespace, ",") {
+			namespace = strings.TrimSpace(namespace)
+			// An empty entry means all namespaces, which would silently widen the scope.
+			if namespace == "" {
+				setupLog.Error(nil, "empty namespace in "+watchNamespaceEnvVar, watchNamespaceEnvVar, watchNamespace)
+				os.Exit(1)
+			}
+			defaultNamespaces[namespace] = cache.Config{}
+		}
+		setupLog.Info("manager set up with namespaces", "namespaces", slices.Sorted(maps.Keys(defaultNamespaces)))
+		options.Cache = cache.Options{DefaultNamespaces: defaultNamespaces}
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
@@ -117,8 +128,9 @@ func main() {
 	}
 
 	if err = (&controllers.SopsSecretReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		//nolint:staticcheck // the reconciler uses the legacy events API
 		Recorder:  mgr.GetEventRecorderFor(controllerName),
 		Decryptor: &sops.Decryptor{},
 	}).SetupWithManager(mgr); err != nil {

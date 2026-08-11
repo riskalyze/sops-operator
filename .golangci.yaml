@@ -1,25 +1,24 @@
+version: "2"
+
 run:
   timeout: 2m
   allow-parallel-runners: true
 
-linter-settings:
-  misspell:
-    locale: US
-
 linters:
-  disable-all: true
+  default: none
   enable:
-    # - deadcode
     - errcheck
-    - gofmt
-    - goimports
-    - gosimple
     - govet
     - ineffassign
     - misspell
     - revive
     - staticcheck
-    # - structcheck
-    - typecheck
     - unused
-    # - varcheck
+  settings:
+    misspell:
+      locale: US
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

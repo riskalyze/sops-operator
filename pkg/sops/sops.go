@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package sops decrypts SOPS-encrypted data by shelling out to the sops binary.
 package sops
 
 import (
@@ -25,6 +26,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+// Decryptor decrypts SOPS-encrypted data using the sops binary.
 type Decryptor struct{}
 
 var (

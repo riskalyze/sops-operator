@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package controllers implements the SopsSecret controller.
 package controllers
 
 import (
@@ -37,6 +38,7 @@ import (
 	craftypathgithubiov1alpha1 "github.com/riskalyze/sops-operator/api/v1alpha1"
 )
 
+// Decryptor decrypts SOPS-encrypted data.
 type Decryptor interface {
 	Decrypt(fileName string, encrypted string) ([]byte, error)
 }
@@ -55,6 +57,7 @@ type SopsSecretReconciler struct {
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;create;update
 
+// Reconcile creates or updates the Secret belonging to a SopsSecret.
 func (r *SopsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	reqLogger := log.FromContext(ctx)
 	reqLogger.Info("reconciling SopsSecret")
@@ -94,11 +97,11 @@ func right(str string, num int) string {
 	if num <= 0 {
 		return ""
 	}
-	max := len(str)
-	if num > max {
-		num = max
+	length := len(str)
+	if num > length {
+		num = length
 	}
-	num = max - num
+	num = length - num
 	return str[num:]
 }
 
@@ -162,25 +165,19 @@ func (r *SopsSecretReconciler) manageError(ctx context.Context, instance *crafty
 
 	if err := r.Status().Update(ctx, instance); err != nil {
 		logger.Error(err, "unable to update status")
-		return reconcile.Result{
-			RequeueAfter: time.Second,
-			Requeue:      true,
-		}, nil
+		return reconcile.Result{RequeueAfter: time.Second}, nil
 	}
 
 	var retryInterval time.Duration
 	if lastUpdate.IsZero() || lastStatus == "Success" {
 		retryInterval = time.Second
 	} else {
-		retryInterval = status.LastUpdate.Sub(lastUpdate.Time.Round(time.Second))
+		retryInterval = status.LastUpdate.Sub(lastUpdate.Round(time.Second))
 	}
 
 	reqeueAfter := time.Duration(math.Min(float64(retryInterval.Nanoseconds()*2), float64(time.Hour.Nanoseconds()*6)))
 	logger.Error(issue, "failed to reconcile SopsSecret", "reqeueAfter", reqeueAfter)
-	return reconcile.Result{
-		RequeueAfter: reqeueAfter,
-		Requeue:      true,
-	}, nil
+	return reconcile.Result{RequeueAfter: reqeueAfter}, nil
 }
 
 func (r *SopsSecretReconciler) manageSuccess(ctx context.Context, instance *craftypathgithubiov1alpha1.SopsSecret, result controllerutil.OperationResult) (reconcile.Result, error) {
@@ -201,10 +198,7 @@ func (r *SopsSecretReconciler) manageSuccess(ctx context.Context, instance *craf
 	if err := r.Status().Update(ctx, instance); err != nil {
 		logger.Error(err, "unable to update status")
 		r.Recorder.Event(instance, "Warning", "ProcessingError", "Unable to update status")
-		return reconcile.Result{
-			RequeueAfter: time.Second,
-			Requeue:      true,
-		}, nil
+		return reconcile.Result{RequeueAfter: time.Second}, nil
 	}
 
 	opResult := capitalizeFirst(string(result))
