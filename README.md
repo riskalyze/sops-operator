@@ -53,9 +53,30 @@ metadata:
     mylabel: mylabelvalue
   annotations:
     myannotation: myannotationvalue
+    craftypath.github.io/managed-secret-metadata: '{"annotations":["myannotation"],"labels":["mylabel"]}'
 data:
   test.yaml: dGVzdDogdGVzdHZhbHVlCg==
 ```
+
+## Secret metadata ownership
+
+The operator manages the label and annotation keys declared in `spec.metadata`.
+It updates those keys and removes them when they are removed from the spec, while
+preserving other keys added directly to the Secret by other controllers. This
+includes Percona's password-hash annotations, which must survive reconciliation
+to avoid repeated database password updates. If two controllers set the same key,
+the value in the `SopsSecret` takes precedence during SOPS reconciliation.
+
+The reserved `craftypath.github.io/managed-secret-metadata` annotation tracks the
+managed key names, not their values or any Secret data. Do not set this annotation
+in `spec.metadata.annotations`. If its contents are invalid, reconciliation fails
+without updating the Secret rather than guessing which keys to remove.
+
+When upgrading existing Secrets without this tracking annotation, the operator
+adopts the keys currently declared in the spec and preserves all other metadata.
+Previously managed keys that were removed from the spec before the first
+reconciliation after upgrading cannot be identified and must be removed manually.
+Secret data continues to be replaced with the decrypted contents of the spec.
 
 ## Installation
 
