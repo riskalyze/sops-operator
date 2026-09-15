@@ -19,8 +19,11 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
+	"slices"
 	"time"
 	"unicode"
 
@@ -133,8 +136,9 @@ func (r *SopsSecretReconciler) update(ctx context.Context, secret *corev1.Secret
 		}
 	}
 
-	secret.Annotations = sopsSecret.Spec.Metadata.Annotations
-	secret.Labels = sopsSecret.Spec.Metadata.Labels
+	if err := reconcileSecretMetadata(secret, sopsSecret.Spec.Metadata); err != nil {
+		return err
+	}
 	secret.Data = data
 	if sopsSecret.Spec.Type != "" {
 		secret.Type = sopsSecret.Spec.Type
@@ -145,6 +149,75 @@ func (r *SopsSecretReconciler) update(ctx context.Context, secret *corev1.Secret
 		return fmt.Errorf("unable to set ownerReference: %w", err)
 	}
 	return nil
+}
+
+const managedMetadataAnnotation = "craftypath.github.io/managed-secret-metadata"
+
+type managedMetadataKeys struct {
+	Annotations []string `json:"annotations,omitempty"`
+	Labels      []string `json:"labels,omitempty"`
+}
+
+// reconcileSecretMetadata owns only keys declared by the SopsSecret. Other
+// controllers may store state on the Secret (for example, Percona password hashes).
+func reconcileSecretMetadata(secret *corev1.Secret, desired craftypathgithubiov1alpha1.SopsSecretObjectMeta) error {
+	if _, ok := desired.Annotations[managedMetadataAnnotation]; ok {
+		return fmt.Errorf("annotation %s is reserved for the operator", managedMetadataAnnotation)
+	}
+
+	previous := &managedMetadataKeys{}
+	if raw, ok := secret.Annotations[managedMetadataAnnotation]; ok {
+		if err := json.Unmarshal([]byte(raw), &previous); err != nil {
+			return fmt.Errorf("parse managed Secret metadata: %w", err)
+		}
+		if previous == nil {
+			return fmt.Errorf("parse managed Secret metadata: expected an object, got null")
+		}
+	}
+
+	current := managedMetadataKeys{
+		Annotations: slices.Sorted(maps.Keys(desired.Annotations)),
+		Labels:      slices.Sorted(maps.Keys(desired.Labels)),
+	}
+	encoded, err := json.Marshal(current)
+	if err != nil {
+		return fmt.Errorf("encode managed Secret metadata: %w", err)
+	}
+
+	secret.Annotations = reconcileMetadataMap(secret.Annotations, desired.Annotations, previous.Annotations)
+	secret.Labels = reconcileMetadataMap(secret.Labels, desired.Labels, previous.Labels)
+	if len(current.Annotations)+len(current.Labels) == 0 {
+		delete(secret.Annotations, managedMetadataAnnotation)
+	} else {
+		if secret.Annotations == nil {
+			secret.Annotations = make(map[string]string)
+		}
+		// Store key names only, never annotation values or Secret data.
+		secret.Annotations[managedMetadataAnnotation] = string(encoded)
+	}
+	if len(secret.Annotations) == 0 {
+		secret.Annotations = nil
+	}
+	return nil
+}
+
+func reconcileMetadataMap(existing, desired map[string]string, previous []string) map[string]string {
+	result := maps.Clone(existing)
+	for _, key := range previous {
+		if _, ok := desired[key]; !ok {
+			delete(result, key)
+		}
+	}
+	if len(desired) > 0 {
+		if result == nil {
+			result = make(map[string]string)
+		}
+		maps.Copy(result, desired)
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func (r *SopsSecretReconciler) manageError(ctx context.Context, instance *craftypathgithubiov1alpha1.SopsSecret, issue error) (reconcile.Result, error) {

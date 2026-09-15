@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"maps"
 	"os"
 	"testing"
 
@@ -124,7 +125,9 @@ func TestReconcile_Create(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, []byte("unencrypted"), secret.Data["test.yaml"])
 			assert.Equal(t, tt.sopsSecret.Spec.Metadata.Labels, secret.Labels)
-			assert.Equal(t, tt.sopsSecret.Spec.Metadata.Annotations, secret.Annotations)
+			annotations := maps.Clone(secret.Annotations)
+			delete(annotations, managedMetadataAnnotation)
+			assert.Equal(t, tt.sopsSecret.Spec.Metadata.Annotations, annotations)
 			event := <-recorder.Events
 			assert.Equal(t, event, "Normal Created Created secret: test-secret")
 		})
@@ -177,9 +180,125 @@ func TestReconcile_Update(t *testing.T) {
 	err = r.Get(context.Background(), req.NamespacedName, secret)
 	require.NoError(t, err)
 	assert.Equal(t, sopsSecret.Spec.Metadata.Labels, secret.Labels)
-	assert.Equal(t, sopsSecret.Spec.Metadata.Annotations, secret.Annotations)
+	assert.Equal(t, "bar", secret.Annotations["myannotation"])
+	assert.JSONEq(t, `{"annotations":["myannotation"],"labels":["mylabel"]}`, secret.Annotations[managedMetadataAnnotation])
 	event = <-recorder.Events
 	assert.Equal(t, event, "Normal Updated Updated secret: test-secret")
+}
+
+func TestReconcile_PreservesOtherControllerMetadata(t *testing.T) {
+	for _, withMetadata := range []bool{false, true} {
+		t.Run(map[bool]string{false: "without metadata", true: "with metadata"}[withMetadata], func(t *testing.T) {
+			ctx := context.Background()
+			s := runtime.NewScheme()
+			utilruntime.Must(scheme.AddToScheme(s))
+			utilruntime.Must(v1alpha1.AddToScheme(s))
+			sopsSecret := &v1alpha1.SopsSecret{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+				Spec:       v1alpha1.SopsSecretSpec{StringData: map[string]string{"test.yaml": "encrypted"}},
+			}
+			if withMetadata {
+				sopsSecret.Spec.Metadata = v1alpha1.SopsSecretObjectMeta{
+					Annotations: map[string]string{"managed.example/key": "initial"},
+					Labels:      map[string]string{"managed.example/key": "initial"},
+				}
+			}
+			recorder := record.NewFakeRecorder(20)
+			r := newSopsSecretReconciler(s, recorder, sopsSecret)
+			_, err := r.Reconcile(ctx, req)
+			require.NoError(t, err)
+			require.Equal(t, "Normal Created Created secret: test-secret", <-recorder.Events)
+
+			secret := &corev1.Secret{}
+			require.NoError(t, r.Get(ctx, req.NamespacedName, secret))
+			if secret.Annotations == nil {
+				secret.Annotations = make(map[string]string)
+			}
+			if secret.Labels == nil {
+				secret.Labels = make(map[string]string)
+			}
+			const hashKey = "percona.com/example-cluster-app-user-hash"
+			secret.Annotations[hashKey] = "example-password-hash"
+			secret.Labels["other.example/key"] = "external"
+			require.NoError(t, r.Update(ctx, secret))
+			before := secret.DeepCopy()
+			require.NoError(t, r.Get(ctx, req.NamespacedName, sopsSecret))
+			statusBefore := sopsSecret.Status
+
+			// A Secret watch event must converge without another write or status update.
+			for range 3 {
+				_, err = r.Reconcile(ctx, req)
+				require.NoError(t, err)
+				require.NoError(t, r.Get(ctx, req.NamespacedName, secret))
+				assert.Equal(t, before, secret)
+				require.NoError(t, r.Get(ctx, req.NamespacedName, sopsSecret))
+				assert.Equal(t, statusBefore, sopsSecret.Status)
+				assert.Empty(t, recorder.Events)
+			}
+
+			if withMetadata {
+				// Removing owned keys must still work without removing foreign keys.
+				sopsSecret.Spec.Metadata = v1alpha1.SopsSecretObjectMeta{}
+				require.NoError(t, r.Update(ctx, sopsSecret))
+				_, err = r.Reconcile(ctx, req)
+				require.NoError(t, err)
+				require.NoError(t, r.Get(ctx, req.NamespacedName, secret))
+				assert.Equal(t, map[string]string{hashKey: "example-password-hash"}, secret.Annotations)
+				assert.Equal(t, map[string]string{"other.example/key": "external"}, secret.Labels)
+				assert.Equal(t, before.Data, secret.Data)
+				require.Equal(t, "Normal Updated Updated secret: test-secret", <-recorder.Events)
+				before = secret.DeepCopy()
+				_, err = r.Reconcile(ctx, req)
+				require.NoError(t, err)
+				require.NoError(t, r.Get(ctx, req.NamespacedName, secret))
+				assert.Equal(t, before, secret)
+				assert.Empty(t, recorder.Events)
+			}
+		})
+	}
+}
+
+func TestSecretMetadata_AdoptsExistingSecret(t *testing.T) {
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+		Annotations: map[string]string{"external": "keep", "managed": "old"},
+		Labels:      map[string]string{"external": "keep", "managed": "old"},
+	}}
+	desired := v1alpha1.SopsSecretObjectMeta{
+		Annotations: map[string]string{"managed": "new"},
+		Labels:      map[string]string{"managed": "new"},
+	}
+	require.NoError(t, reconcileSecretMetadata(secret, desired))
+	assert.Equal(t, "keep", secret.Annotations["external"])
+	assert.Equal(t, "new", secret.Annotations["managed"])
+	assert.Equal(t, map[string]string{"external": "keep", "managed": "new"}, secret.Labels)
+	assert.JSONEq(t, `{"annotations":["managed"],"labels":["managed"]}`, secret.Annotations[managedMetadataAnnotation])
+	// Neither the informer-cached spec nor its maps should be modified.
+	assert.Equal(t, map[string]string{"managed": "new"}, desired.Annotations)
+	assert.Equal(t, map[string]string{"managed": "new"}, desired.Labels)
+}
+
+func TestSecretMetadata_InvalidOwnership(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		raw     string
+		desired map[string]string
+	}{
+		{name: "malformed tracking annotation", raw: "not-json"},
+		{name: "null tracking annotation", raw: "null"},
+		{name: "null tracking annotation with whitespace", raw: " \n null \t"},
+		{name: "reserved annotation in spec", raw: `{}`, desired: map[string]string{managedMetadataAnnotation: "override"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{managedMetadataAnnotation: tc.raw, "external": "keep"},
+				Labels:      map[string]string{"external": "keep"},
+			}}
+			before := secret.DeepCopy()
+			err := reconcileSecretMetadata(secret, v1alpha1.SopsSecretObjectMeta{Annotations: tc.desired})
+			require.Error(t, err)
+			assert.Equal(t, before, secret)
+		})
+	}
 }
 
 func TestReconcile_right(t *testing.T) {
