@@ -284,6 +284,8 @@ func TestSecretMetadata_InvalidOwnership(t *testing.T) {
 		desired map[string]string
 	}{
 		{name: "malformed tracking annotation", raw: "not-json"},
+		{name: "null tracking annotation", raw: "null"},
+		{name: "null tracking annotation with whitespace", raw: " \n null \t"},
 		{name: "reserved annotation in spec", raw: `{}`, desired: map[string]string{managedMetadataAnnotation: "override"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

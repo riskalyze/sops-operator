@@ -165,10 +165,13 @@ func reconcileSecretMetadata(secret *corev1.Secret, desired craftypathgithubiov1
 		return fmt.Errorf("annotation %s is reserved for the operator", managedMetadataAnnotation)
 	}
 
-	var previous managedMetadataKeys
+	previous := &managedMetadataKeys{}
 	if raw, ok := secret.Annotations[managedMetadataAnnotation]; ok {
 		if err := json.Unmarshal([]byte(raw), &previous); err != nil {
 			return fmt.Errorf("parse managed Secret metadata: %w", err)
+		}
+		if previous == nil {
+			return fmt.Errorf("parse managed Secret metadata: expected an object, got null")
 		}
 	}
 
